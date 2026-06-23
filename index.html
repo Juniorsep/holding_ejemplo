@@ -130,6 +130,15 @@ body {
   font-size: 0.8rem;
 }
 
+.step-pill.s-green { color: var(--green); }
+.step-pill.s-green .num { background: var(--green-light); color: var(--green); font-size: 0.8rem; }
+
+.step-pill.s-amber { color: var(--amber); }
+.step-pill.s-amber .num { background: var(--amber-light); color: var(--amber); font-size: 0.75rem; }
+
+.step-pill.s-red { color: var(--coral); }
+.step-pill.s-red .num { background: var(--coral-light); color: var(--coral); font-size: 0.75rem; }
+
 /* ===================== CARD ===================== */
 .card {
   background: var(--white);
@@ -1065,22 +1074,33 @@ body {
 
   <!-- STEP BAR -->
   <nav class="step-bar" aria-label="Pasos del formulario">
-    <button class="step-pill active" id="pill-1" onclick="goTo(1)" type="button">
+    <button class="step-pill active" id="pill-1" onclick="navTo(1)" type="button">
       <span class="num" id="num-1">1</span> Grupo
     </button>
-    <button class="step-pill" id="pill-2" onclick="goTo(2)" type="button">
+    <button class="step-pill" id="pill-2" onclick="navTo(2)" type="button">
       <span class="num" id="num-2">2</span> Empresas
     </button>
-    <button class="step-pill" id="pill-3" onclick="goTo(3)" type="button">
+    <button class="step-pill" id="pill-3" onclick="navTo(3)" type="button">
       <span class="num" id="num-3">3</span> Representantes
     </button>
-    <button class="step-pill" id="pill-4" onclick="goTo(4)" type="button">
+    <button class="step-pill" id="pill-4" onclick="navTo(4)" type="button">
       <span class="num" id="num-4">4</span> Contactos
     </button>
-    <button class="step-pill" id="pill-5" onclick="goTo(5)" type="button">
+    <button class="step-pill" id="pill-5" onclick="navTo(5)" type="button">
       <span class="num" id="num-5">5</span> Revisión
     </button>
   </nav>
+  <div style="display:flex;gap:16px;justify-content:flex-end;margin:-16px 0 18px;padding-right:4px;flex-wrap:wrap">
+    <span style="font-size:0.72rem;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px">
+      <span style="background:var(--green-light);color:var(--green);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700">✓</span> Completo
+    </span>
+    <span style="font-size:0.72rem;color:var(--amber);font-weight:600;display:flex;align-items:center;gap:4px">
+      <span style="background:var(--amber-light);color:var(--amber);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700">~</span> Incompleto
+    </span>
+    <span style="font-size:0.72rem;color:var(--coral);font-weight:600;display:flex;align-items:center;gap:4px">
+      <span style="background:var(--coral-light);color:var(--coral);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700">!</span> Pendiente
+    </span>
+  </div>
 
   <!-- ======================================================
        PASO 1 — DATOS DEL GRUPO
@@ -1325,22 +1345,102 @@ let empIdSeq = 0;
 let repIdSeq = 0;
 
 // ===================== NAVEGACIÓN =====================
+
+function navTo(n) {
+  if (!state.visited) state.visited = new Set();
+  state.visited.add(state.step);
+  goTo(n);
+  if (n === 2) renderEmpresas();
+  if (n === 3) renderReps();
+  if (n === 4) { state.visited.add(4); renderContactos(); updateAllPills(); }
+  if (n === 5) renderReview();
+}
+
+function stepStatus(n) {
+  if (n === 1) {
+    const nombre = (state.grupo.nombre || '').trim();
+    const num    = state.grupo.numEmpresas;
+    if (!nombre && !num) return 'empty';
+    if (nombre && num)   return 'green';
+    return 'amber';
+  }
+  if (n === 2) {
+    if (state.empresas.length === 0) return 'empty';
+    const filled = state.empresas.filter(e => e.nombre && e.rut).length;
+    if (filled === 0)                        return 'red';
+    if (filled < state.empresas.length)      return 'amber';
+    return 'green';
+  }
+  if (n === 3) {
+    if (state.representantes.length === 0) return 'red';
+    const allHavePer = state.representantes.every(r => r.personeria.length > 0);
+    const allEmpsCovered = state.empresas.every(emp =>
+      state.representantes.some(r => r.scope === 'todas' || r.empresaIds.includes(emp.id))
+    );
+    if (allHavePer && allEmpsCovered) return 'green';
+    return 'amber';
+  }
+  if (n === 4) {
+    if (Object.keys(state.contactos).length === 0) return 'red';
+    const total   = state.empresas.length * ROLES.length;
+    const filled  = state.empresas.reduce((acc, emp) => {
+      const c = state.contactos[emp.id] || {};
+      return acc + ROLES.filter(r => c[r.key] && c[r.key].nombre).length;
+    }, 0);
+    if (filled === 0)       return 'red';
+    if (filled < total)     return 'amber';
+    return 'green';
+  }
+  if (n === 5) {
+    const issues = getIssues();
+    if (issues.length === 0 && state.empresas.length > 0) return 'green';
+    if (issues.length > 0)  return 'red';
+    return 'empty';
+  }
+  return 'empty';
+}
+
+function setPillStatus(n, status, isActive) {
+  const pill = document.getElementById('pill-' + n);
+  const num  = document.getElementById('num-' + n);
+  pill.classList.remove('done','s-green','s-amber','s-red');
+  if (isActive) return;
+  if (status === 'empty') { num.textContent = n; return; }
+  if (status === 'green') { pill.classList.add('s-green'); num.textContent = '✓'; return; }
+  if (status === 'amber') { pill.classList.add('s-amber'); num.textContent = '~'; return; }
+  if (status === 'red')   { pill.classList.add('s-red');   num.textContent = '!'; return; }
+}
+
+function updateAllPills() {
+  [1,2,3,4,5].forEach(n => {
+    if (n === state.step) return;
+    const visited = state.visited && state.visited.has(n);
+    if (!visited) {
+      document.getElementById('pill-' + n).classList.remove('done','s-green','s-amber','s-red');
+      document.getElementById('num-' + n).textContent = n;
+      return;
+    }
+    setPillStatus(n, stepStatus(n), false);
+  });
+}
+
 function goTo(n) {
   document.getElementById('step-' + state.step).classList.remove('active');
   document.getElementById('pill-' + state.step).classList.remove('active');
-  if (n > state.step) markDone(state.step);
+  if (!state.visited) state.visited = new Set();
+  state.visited.add(state.step);
   state.step = n;
   document.getElementById('step-' + n).classList.add('active');
-  document.getElementById('pill-' + n).classList.add('active');
-  document.getElementById('pill-' + n).classList.remove('done');
+  const pill = document.getElementById('pill-' + n);
+  pill.classList.add('active');
+  pill.classList.remove('done','s-green','s-amber','s-red');
   document.getElementById('num-' + n).textContent = n;
+  updateAllPills();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function markDone(n) {
-  const pill = document.getElementById('pill-' + n);
-  pill.classList.add('done');
-  document.getElementById('num-' + n).textContent = '✓';
+  setPillStatus(n, stepStatus(n), false);
 }
 
 function nextStep(from) {
@@ -1350,6 +1450,8 @@ function nextStep(from) {
       nombre: document.getElementById('g-nombre').value.trim(),
       numEmpresas: num
     };
+    if (!state.visited) state.visited = new Set();
+    state.visited.add(1);
     // Pre-populate empresa slots to match the declared count
     // Keep existing data, only add/trim to match
     while (state.empresas.length < num) {
@@ -1721,7 +1823,7 @@ function clearEmpresa(id) {
 
 function updateEmpresa(id, field, val) {
   const e = state.empresas.find(x => x.id === id);
-  if (e) e[field] = val;
+  if (e) { e[field] = val; updateAllPills(); }
 }
 
 // ===================== REPRESENTANTES =====================
@@ -1873,12 +1975,14 @@ function saveRep() {
 
   document.getElementById('modal-rep').classList.remove('open');
   renderReps();
+  updateAllPills();
 }
 
 function removeRep(idx) {
   if (!confirm('¿Eliminar este representante?')) return;
   state.representantes.splice(idx, 1);
   renderReps();
+  updateAllPills();
 }
 
 // Modal personería
@@ -1927,11 +2031,13 @@ function savePer() {
   document.getElementById('modal-per').classList.remove('open');
   toast('Personería agregada');
   renderReps();
+  updateAllPills();
 }
 
 function removePersoneria(repIdx, perIdx) {
   state.representantes[repIdx].personeria.splice(perIdx, 1);
   renderReps();
+  updateAllPills();
 }
 
 // ===================== CONTACTOS =====================
@@ -2022,6 +2128,7 @@ function updateContacto(empId, rol, field, val) {
   if (!state.contactos[empId][rol]) state.contactos[empId][rol] = {};
   state.contactos[empId][rol][field] = val;
   updateChip(empId);
+  updateAllPills();
 }
 
 function updateChip(empId) {
@@ -2043,11 +2150,11 @@ function copyContacts(targetId) {
     state.contactos[targetId][r.key] = src[r.key] ? { ...src[r.key] } : {};
   });
   renderContactos();
-  // reabrir accordion target
   const body = document.getElementById('acc-body-'+targetId);
   const chev = document.getElementById('chev-'+targetId);
   if (body) { body.classList.add('open'); chev.classList.add('open'); }
   toast('Contactos copiados correctamente', 'success');
+  updateAllPills();
 }
 
 // ===================== GUARDAR =====================
